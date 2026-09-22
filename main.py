@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import cv2
 import math
+import time
 
 # Load YOLO model
 model = YOLO("yolo11n.pt")
@@ -11,8 +12,10 @@ cap = cv2.VideoCapture(0)
 # Previous positions of tracked persons
 previous_positions = {}
 
+# Store zone entry time for each person
+zone_entry_times = {}
+
 # Define shelf zone
-# Format: x1, y1, x2, y2
 shelf_x1 = 150
 shelf_y1 = 100
 shelf_x2 = 500
@@ -68,20 +71,16 @@ while True:
 
             x1, y1, x2, y2 = box
 
-            # Calculate person center
+            # Calculate center of person
             center_x = int((x1 + x2) / 2)
             center_y = int((y1 + y2) / 2)
 
             current_position = (center_x, center_y)
 
-            # Check whether person is inside shelf zone
-            inside_zone = (
-                shelf_x1 <= center_x <= shelf_x2
-                and
-                shelf_y1 <= center_y <= shelf_y2
-            )
+            # -----------------------------
+            # MOVEMENT ANALYSIS
+            # -----------------------------
 
-            # Calculate movement
             movement = "STATIONARY"
 
             if track_id in previous_positions:
@@ -96,16 +95,59 @@ while True:
                 if distance > 5:
                     movement = "MOVING"
 
-            # Display status
+            previous_positions[track_id] = current_position
+
+            # -----------------------------
+            # SHELF ZONE DETECTION
+            # -----------------------------
+
+            inside_zone = (
+                shelf_x1 <= center_x <= shelf_x2
+                and
+                shelf_y1 <= center_y <= shelf_y2
+            )
+
+            # -----------------------------
+            # ZONE TIMER
+            # -----------------------------
+
             if inside_zone:
-                zone_status = "IN SHELF ZONE"
+
+                # Start timer when person enters
+                if track_id not in zone_entry_times:
+                    zone_entry_times[track_id] = time.time()
+
+                # Calculate time spent in zone
+                duration = time.time() - zone_entry_times[track_id]
+
+                zone_status = f"IN ZONE: {duration:.1f}s"
+
             else:
+
+                # If person was previously in zone
+                if track_id in zone_entry_times:
+
+                    duration = time.time() - zone_entry_times[track_id]
+
+                    print(
+                        f"Person ID {track_id} "
+                        f"spent {duration:.1f} seconds in shelf zone"
+                    )
+
+                    # Remove timer
+                    del zone_entry_times[track_id]
+
+                duration = 0
                 zone_status = "OUTSIDE ZONE"
+
+            # -----------------------------
+            # DISPLAY INFORMATION
+            # -----------------------------
 
             cv2.putText(
                 annotated_frame,
                 f"ID {track_id}",
-                (int(x1), int(y1) - 35),
+                (int(x1), int(y1) - 45),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (0, 255, 0),
@@ -115,7 +157,7 @@ while True:
             cv2.putText(
                 annotated_frame,
                 movement,
-                (int(x1), int(y1) - 10),
+                (int(x1), int(y1) - 20),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (0, 255, 0),
@@ -132,12 +174,9 @@ while True:
                 2
             )
 
-            # Update position
-            previous_positions[track_id] = current_position
-
-    # Display
+    # Display frame
     cv2.imshow(
-        "AI Shoplifting Detection - Zone Analysis",
+        "AI Shoplifting Detection - Behaviour Analysis",
         annotated_frame
     )
 
