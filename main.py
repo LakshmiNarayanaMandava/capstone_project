@@ -8,8 +8,15 @@ model = YOLO("yolo11n.pt")
 # Open webcam
 cap = cv2.VideoCapture(0)
 
-# Store previous center positions
+# Previous positions of tracked persons
 previous_positions = {}
+
+# Define shelf zone
+# Format: x1, y1, x2, y2
+shelf_x1 = 150
+shelf_y1 = 100
+shelf_x2 = 500
+shelf_y2 = 400
 
 while True:
 
@@ -19,7 +26,7 @@ while True:
         print("Could not access camera")
         break
 
-    # Detection + tracking
+    # YOLO detection + tracking
     results = model.track(
         frame,
         persist=True,
@@ -27,13 +34,31 @@ while True:
         tracker="bytetrack.yaml"
     )
 
-    # Get the first result
     result = results[0]
 
-    # Draw detections
+    # Draw YOLO detections
     annotated_frame = result.plot()
 
-    # Check whether tracking IDs exist
+    # Draw shelf zone
+    cv2.rectangle(
+        annotated_frame,
+        (shelf_x1, shelf_y1),
+        (shelf_x2, shelf_y2),
+        (255, 0, 0),
+        2
+    )
+
+    cv2.putText(
+        annotated_frame,
+        "SHELF ZONE",
+        (shelf_x1, shelf_y1 - 10),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 0, 0),
+        2
+    )
+
+    # Check tracking IDs
     if result.boxes.id is not None:
 
         boxes = result.boxes.xyxy.cpu().numpy()
@@ -43,51 +68,81 @@ while True:
 
             x1, y1, x2, y2 = box
 
-            # Calculate center of bounding box
+            # Calculate person center
             center_x = int((x1 + x2) / 2)
             center_y = int((y1 + y2) / 2)
 
             current_position = (center_x, center_y)
 
-            # Check previous position
+            # Check whether person is inside shelf zone
+            inside_zone = (
+                shelf_x1 <= center_x <= shelf_x2
+                and
+                shelf_y1 <= center_y <= shelf_y2
+            )
+
+            # Calculate movement
+            movement = "STATIONARY"
+
             if track_id in previous_positions:
 
                 previous_position = previous_positions[track_id]
 
-                # Calculate movement distance
                 distance = math.sqrt(
                     (center_x - previous_position[0]) ** 2 +
                     (center_y - previous_position[1]) ** 2
                 )
 
-                # Determine movement status
                 if distance > 5:
                     movement = "MOVING"
-                else:
-                    movement = "STATIONARY"
 
-                # Display movement information
-                cv2.putText(
-                    annotated_frame,
-                    f"ID {track_id}: {movement}",
-                    (int(x1), int(y1) - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 255, 0),
-                    2
-                )
+            # Display status
+            if inside_zone:
+                zone_status = "IN SHELF ZONE"
+            else:
+                zone_status = "OUTSIDE ZONE"
+
+            cv2.putText(
+                annotated_frame,
+                f"ID {track_id}",
+                (int(x1), int(y1) - 35),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2
+            )
+
+            cv2.putText(
+                annotated_frame,
+                movement,
+                (int(x1), int(y1) - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2
+            )
+
+            cv2.putText(
+                annotated_frame,
+                zone_status,
+                (int(x1), int(y2) + 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 255),
+                2
+            )
 
             # Update position
             previous_positions[track_id] = current_position
 
-    # Display frame
+    # Display
     cv2.imshow(
-        "AI Shoplifting Detection - Behaviour Analysis",
+        "AI Shoplifting Detection - Zone Analysis",
         annotated_frame
     )
 
     # Press Q to exit
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 cap.release()
